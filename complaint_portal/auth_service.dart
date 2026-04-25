@@ -10,19 +10,18 @@ class AuthService {
     required String fullName,
   }) async {
     try {
-      final AuthResponse res = await _supabase.auth.signUp(
+      await _supabase.auth.signUp(
         email: email,
         password: password,
-        // This 'data' section tells the database to fill our 'profiles' table
         data: {
           'full_name': fullName,
-          'role': 'student', // Default role for app signups
+          'role': 'student', // Initial role is always student
         },
       );
-      
-      if (res.user == null) throw 'Signup failed';
+    } on AuthException catch (e) {
+      throw e.message;
     } catch (e) {
-      throw e.toString();
+      throw 'An unexpected error occurred: $e';
     }
   }
 
@@ -30,26 +29,37 @@ class AuthService {
   Future<void> signIn(String email, String password) async {
     try {
       await _supabase.auth.signInWithPassword(email: email, password: password);
+    } on AuthException catch (e) {
+      throw e.message;
     } catch (e) {
       throw e.toString();
     }
   }
 
-  // 3. GET CURRENT USER ROLE
-  // This helps route the user to Student or Admin dashboard
+  // 3. ROLE CHECK (The "Gatekeeper" Logic)
+  // This fetches the role from your 'profiles' table
   Future<String> getUserRole() async {
-    final userId = _supabase.auth.currentUser?.id;
-    if (userId == null) return 'none';
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) return 'none';
 
-    final data = await _supabase
-        .from('profiles')
-        .select('role')
-        .eq('id', userId)
-        .single();
-    
-    return data['role'] as String;
+      final response = await _supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle(); // Better than .single() as it won't throw if empty
+
+      if (response == null) return 'student'; // Default fallback
+      return response['role'] as String;
+    } catch (e) {
+      print("Error fetching role: $e");
+      return 'student'; 
+    }
   }
 
-  // 4. LOGOUT
+  // 4. CURRENT USER DATA (Optional - helpful for the Welcome Screen)
+  User? get currentUser => _supabase.auth.currentUser;
+
+  // 5. LOGOUT
   Future<void> signOut() async => await _supabase.auth.signOut();
 }
